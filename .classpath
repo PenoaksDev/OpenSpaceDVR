@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<classpath>
+	<classpathentry kind="src" path="src"/>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-1.7"/>
+	<classpathentry kind="lib" path="libs/bridj-0.7-20130703.103049-42.jar"/>
+	<classpathentry kind="lib" path="libs/slf4j-api-1.7.2.jar"/>
+	<classpathentry kind="lib" path="libs/webcam-capture-0.3.10-RC4.jar"/>
+	<classpathentry kind="lib" path="libs/v4l4j.jar"/>
+	<classpathentry kind="lib" path="libs/logback-classic-1.1.2.jar"/>
+	<classpathentry kind="lib" path="libs/logback-core-1.1.2.jar"/>
+	<classpathentry kind="output" path="bin"/>
+</classpath>
