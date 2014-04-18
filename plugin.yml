@@ -1,0 +1,5 @@
+name: ChioriNetworksDVR
+author: Chiori Greene
+main: com.chiorichan.dvr.DVRLoader
+version: '1.0'
+depends: []
