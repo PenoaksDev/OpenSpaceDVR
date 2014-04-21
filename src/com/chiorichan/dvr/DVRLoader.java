@@ -1,15 +1,26 @@
 package com.chiorichan.dvr;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+
+import javax.imageio.ImageIO;
+
 import com.chiorichan.Loader;
 import com.chiorichan.dvr.registry.InputRegistry;
 import com.chiorichan.event.Listener;
+import com.chiorichan.http.HttpResponse;
+import com.chiorichan.http.HttpResponseStage;
 import com.chiorichan.plugin.java.JavaPlugin;
 import com.github.sarxos.webcam.Webcam;
+import com.github.sarxos.webcam.WebcamMotionEvent;
+import com.github.sarxos.webcam.WebcamMotionListener;
 import com.github.sarxos.webcam.ds.v4l4j.V4l4jDriver;
 import com.github.sarxos.webcam.log.WebcamLogConfigurator;
 
-public class DVRLoader extends JavaPlugin implements Listener
+public class DVRLoader extends JavaPlugin implements Listener, WebcamMotionListener
 {
+	private int captureId = -1;
+	
 	static DVRLoader instance;
 	
 	static
@@ -21,62 +32,122 @@ public class DVRLoader extends JavaPlugin implements Listener
 	
 	public DVRLoader()
 	{
-		instance = this;
-	}
-	
-	public void onEnable()
-	{
-		new InputRegistry();
-		
 		WebcamLogConfigurator.configure( DVRLoader.class.getClassLoader().getResourceAsStream( "com/chiorichan/dvr/logback.xml" ) );
 		
 		Loader.getLogger().info( "You are running OS: " + System.getProperty( "os.name" ) );
 		
-		Webcam.setHandleTermSignal( true );
+		instance = this;
+	}
+	
+	public void startMultipart( final HttpResponse rep, int channel ) throws IOException
+	{
+		if ( channel < 0 || channel > InputRegistry.getInputCount() - 1 )
+			channel = 0;
 		
-		/*
-		 * List<Webcam> webcams = Webcam.getWebcams( 10, TimeUnit.SECONDS );
-		 * for ( Webcam w : webcams )
-		 * {
-		 * //System.out.println( "Found Webcamera: " + w.getName() );
-		 * }
-		 * Webcam webcam = webcams.get( 0 );
-		 * webcam.open();
-		 * BufferedImage image = webcam.getImage();
-		 * Graphics2D gd = image.createGraphics();
-		 * adjustGraphics( gd );
-		 * Font font = new Font( "Sans", Font.BOLD, 26 );
-		 * String text = "Camera 08 - Testing";
-		 * TextLayout textLayout = new TextLayout( text, font, gd.getFontRenderContext() );
-		 * gd.setPaint( Color.BLACK );
-		 * gd.setFont( font );
-		 * FontMetrics fm = gd.getFontMetrics();
-		 * int x = ( image.getWidth() / 2 ) - ( fm.stringWidth( text ) / 2 );
-		 * int y = image.getHeight() - 20;
-		 * textLayout.draw( gd, x, y );
-		 * gd.dispose();
-		 * float ninth = 1.0f / 9.0f;
-		 * float[] kernel = new float[9];
-		 * for ( int z = 0; z<9; z++ )
-		 * {
-		 * kernel[z] = ninth;
-		 * }
-		 * ConvolveOp op = new ConvolveOp( new Kernel( 3, 3, kernel ), ConvolveOp.EDGE_NO_OP, null );
-		 * BufferedImage image2 = op.filter( image, null );
-		 * Graphics2D g2 = image2.createGraphics();
-		 * adjustGraphics( g2 );
-		 * g2.setPaint( Color.WHITE );
-		 * textLayout.draw( g2, x, y );
-		 * ImageIO.write( image2, "PNG", new File( "test.png" ) );
-		 */
+		final int channelNum = channel;
 		
+		rep.setContentType( "image/jpeg" );
+		
+		rep.sendMultipart( null );
+		
+		int _taskId = -1;
+		
+		class PushTask implements Runnable
+		{
+			int id = -1;
+			
+			@Override
+			public void run()
+			{
+				if ( InputRegistry.get( channelNum ).getLastImage() != null )
+				{
+					try
+					{
+						ByteArrayOutputStream bs = new ByteArrayOutputStream();
+						ImageIO.write( InputRegistry.get( channelNum ).getLastImage(), "JPG", bs );
+						bs.flush();
+						byte[] bss = bs.toByteArray();
+						bs.close();
+						
+						rep.sendMultipart( bss );
+					}
+					catch ( IOException e )
+					{
+						if ( e.getMessage().toLowerCase().equals( "stream is closed" ) || e.getMessage().toLowerCase().equals( "broken pipe" ) )
+						{
+							Loader.getScheduler().cancelTask( id );
+							try
+							{
+								rep.closeMultipart();
+							}
+							catch ( Exception e1 )
+							{}
+						}
+						
+						Loader.getLogger().warning( e.getMessage(), e );
+					}
+				}
+				
+				if ( rep.getStage() != HttpResponseStage.MULTIPART )
+				{
+					Loader.getScheduler().cancelTask( id );
+					try
+					{
+						rep.closeMultipart();
+					}
+					catch ( Exception e1 )
+					{}
+				}
+			}
+			
+			public void setId( int _taskId )
+			{
+				id = _taskId;
+			}
+		}
+		;
+		
+		PushTask task = new PushTask();
+		
+		_taskId = Loader.getScheduler().scheduleSyncRepeatingTask( this, task, 1L, 1L );
+		task.setId( _taskId );
+	}
+	
+	public byte[] grabSnapshot( int channel ) throws IOException
+	{
+		if ( channel < 0 || channel > InputRegistry.getInputCount() - 1 )
+			channel = 0;
+		
+		ByteArrayOutputStream bs = new ByteArrayOutputStream();
+		ImageIO.write( InputRegistry.get( channel ).getLastImage(), "PNG", bs );
+		bs.flush();
+		byte[] bss = bs.toByteArray();
+		bs.close();
+		
+		return bss;
+	}
+	
+	public void onEnable()
+	{
 		Loader.getPluginManager().registerEvents( this, this );
 		
-		// Loader.getScheduler().scheduleSyncRepeatingTask( this, new SMSTask(), 1480L, 1480L );
+		InputRegistry.findAllDevices();
+		
+		InputRegistry.openAllDevices();
+		
+		captureId = Loader.getScheduler().scheduleSyncRepeatingTask( this, new CapturingTask(), 2L, 2L );
 	}
 	
 	public void onDisable()
 	{
+		Loader.getScheduler().cancelTask( captureId );
+		InputRegistry.destroyAllDevices();
+	}
+	
+	@Override
+	public void motionDetected( WebcamMotionEvent arg0 )
+	{
+		// TODO Auto-generated method stub
 		
 	}
 }

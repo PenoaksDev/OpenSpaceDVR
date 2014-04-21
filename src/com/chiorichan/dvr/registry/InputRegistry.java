@@ -13,9 +13,26 @@ import com.github.sarxos.webcam.WebcamException;
 public class InputRegistry implements WebcamDiscoveryListener
 {
 	protected static List<VideoInput> inputs = new CopyOnWriteArrayList<VideoInput>();
+	protected static InputRegistry instance;
 	
-	public InputRegistry()
+	static
 	{
+		findAllDevices();
+		instance = new InputRegistry();
+	}
+	
+	public static void destroyAllDevices()
+	{
+		for ( VideoInput i : inputs )
+			i.close();
+		
+		inputs.clear();
+	}
+	
+	public static void findAllDevices()
+	{
+		destroyAllDevices();
+		
 		try
 		{
 			for ( Webcam w : Webcam.getWebcams( 30, TimeUnit.SECONDS ) )
@@ -27,7 +44,10 @@ public class InputRegistry implements WebcamDiscoveryListener
 		{
 			e.printStackTrace();
 		}
-		
+	}
+	
+	private InputRegistry()
+	{
 		Webcam.addDiscoveryListener( this );
 	}
 	
@@ -47,6 +67,30 @@ public class InputRegistry implements WebcamDiscoveryListener
 		}
 	}
 	
+	public static void openAllDevices()
+	{
+		for ( VideoInput i : inputs )
+			i.open();
+	}
+	
+	public static void closeAllDevices()
+	{
+		for ( VideoInput i : inputs )
+			i.close();
+	}
+	
+	public static VideoInput get( int index )
+	{
+		try
+		{
+			return inputs.get( index );
+		}
+		catch ( ArrayIndexOutOfBoundsException e )
+		{
+			return null;
+		}
+	}
+	
 	public static void RegisterNewInput( Webcam w )
 	{
 		for ( VideoInput i : inputs )
@@ -54,5 +98,18 @@ public class InputRegistry implements WebcamDiscoveryListener
 				return;
 		
 		inputs.add( new VideoInput( w ) );
+	}
+	
+	public static int getInputCount()
+	{
+		return inputs.size();
+	}
+
+	public static void heartBeat()
+	{
+		for ( VideoInput i : inputs )
+		{
+			i.capture();
+		}
 	}
 }
