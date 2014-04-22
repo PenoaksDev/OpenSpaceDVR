@@ -15,3 +15,7 @@ hs_err_pid*
 /.project
 /.classpath
 /bin
+/nbproject
+/build/
+/manifest.mf
+/build.xml
