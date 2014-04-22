@@ -8,12 +8,18 @@ package com.chiorichan.dvr.utils;
 
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
+import org.jcodec.codecs.h264.H264Encoder;
 
 public class VideoUtils
 {
-	public static void adjustGraphics( Graphics2D g )
-	{
-		g.setRenderingHint( RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON );
-		g.setRenderingHint( RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON );
-	}
+    public static void adjustGraphics( Graphics2D g )
+    {
+        g.setRenderingHint( RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON );
+        g.setRenderingHint( RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON );
+    }
+
+    public static H264Encoder getMP4Encoder()
+    {
+        return new H264Encoder();
+    }
 }

@@ -12,20 +12,19 @@ import java.io.IOException;
 import javax.imageio.ImageIO;
 
 import com.chiorichan.Loader;
+import com.chiorichan.configuration.file.FileConfiguration;
 import com.chiorichan.dvr.registry.InputRegistry;
-import com.chiorichan.event.Listener;
 import com.chiorichan.http.HttpResponse;
 import com.chiorichan.http.HttpResponseStage;
 import com.chiorichan.plugin.java.JavaPlugin;
 import com.github.sarxos.webcam.Webcam;
-import com.github.sarxos.webcam.WebcamMotionEvent;
-import com.github.sarxos.webcam.WebcamMotionListener;
 import com.github.sarxos.webcam.ds.v4l4j.V4l4jDriver;
 import com.github.sarxos.webcam.log.WebcamLogConfigurator;
 
-public class DVRLoader extends JavaPlugin implements Listener, WebcamMotionListener
+public class DVRLoader extends JavaPlugin
 {
     private int captureId = -1;
+    private EventListener listener = new EventListener();
 
     static DVRLoader instance;
 
@@ -144,7 +143,10 @@ public class DVRLoader extends JavaPlugin implements Listener, WebcamMotionListe
     @Override
     public void onEnable()
     {
-        Loader.getPluginManager().registerEvents( this, this );
+        getConfig().addDefault( "config.storage", getDataFolder() );
+        saveConfig();
+        
+        //Loader.getPluginManager().registerEvents( listener, this );
 
         InputRegistry.findAllDevices();
 
@@ -159,11 +161,9 @@ public class DVRLoader extends JavaPlugin implements Listener, WebcamMotionListe
         Loader.getScheduler().cancelTask( captureId );
         InputRegistry.destroyAllDevices();
     }
-
-    @Override
-    public void motionDetected( WebcamMotionEvent arg0 )
+    
+    public static FileConfiguration getConfiguration()
     {
-        // TODO Auto-generated method stub
-
+        return instance.getConfig();
     }
 }
