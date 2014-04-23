@@ -7,10 +7,11 @@
 package com.chiorichan.dvr;
 
 import com.chiorichan.Loader;
-import com.chiorichan.dvr.event.VideoFrameReadyEvent;
 import com.chiorichan.dvr.registry.VideoInput;
-import com.chiorichan.event.EventHandler;
+import com.chiorichan.dvr.utils.AWTUtil;
+import com.chiorichan.dvr.utils.VideoUtils;
 import com.chiorichan.event.Listener;
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -18,11 +19,14 @@ import java.util.ArrayList;
 import org.jcodec.codecs.h264.H264Utils;
 import org.jcodec.common.FileChannelWrapper;
 import org.jcodec.common.NIOUtils;
+import org.jcodec.common.model.ColorSpace;
+import org.jcodec.common.model.Picture;
 import org.jcodec.containers.mp4.Brand;
 import org.jcodec.containers.mp4.MP4Packet;
 import org.jcodec.containers.mp4.TrackType;
 import org.jcodec.containers.mp4.muxer.FramesMP4MuxerTrack;
 import org.jcodec.containers.mp4.muxer.MP4Muxer;
+import org.jcodec.scale.RgbToYuv420p;
 import org.joda.time.DateTime;
 
 /**
@@ -45,13 +49,18 @@ public class MP4Writer implements Listener
         vi = _vi;
 
         updateDest();
-        
-        Loader.getPluginManager().registerEvents( this, DVRLoader.instance );
     }
 
     public void updateDest()
     {
         calculateDest();
+
+        destFile.mkdirs();
+
+        if ( destFile.exists() )
+        {
+            destFile.delete();
+        }
 
         // Close and save last channel;
         if ( ch != null )
@@ -95,17 +104,46 @@ public class MP4Writer implements Listener
         return destFile;
     }
 
-    @EventHandler()
-    public void VideoFrameReadyEvent( VideoFrameReadyEvent event )
+    public Runnable frameHandler( BufferedImage img )
     {
-        if ( event.getVideoInput().equals( vi ) )
+        return new FrameExecutor( img );
+    }
+
+    class FrameExecutor implements Runnable
+    {
+        private BufferedImage bi;
+        private ByteBuffer _buffer;
+
+        public FrameExecutor( BufferedImage _bi )
+        {
+            bi = _bi;
+        }
+
+        @Override
+        public void run()
         {
             try
             {
-                outTrack.addFrame( new MP4Packet( event.getFrame(), frameNo, 25, 1, frameNo, true, null, frameNo, 0 ) );
+                if ( _buffer != null )
+                {
+                    _buffer.clear();
+                }
 
-                spsList = event.getSPSList();
-                ppsList = event.getPPSList();
+                ByteBuffer _out = ByteBuffer.allocate( vi.getHeight() * vi.getWidth() * 6 );
+                RgbToYuv420p transform = new RgbToYuv420p( 0, 0 );
+
+                Picture encoded = Picture.create( vi.getHeight(), vi.getWidth(), ColorSpace.YUV420 );
+
+                transform.transform( AWTUtil.fromBufferedImage( bi ), encoded );
+
+                _buffer = VideoUtils.getMP4Encoder().encodeFrame( encoded, _out );
+
+                spsList.clear();
+                ppsList.clear();
+                H264Utils.wipePS( _buffer, spsList, ppsList );
+                H264Utils.encodeMOVPacket( _buffer );
+
+                outTrack.addFrame( new MP4Packet( _buffer, frameNo, 25, 1, frameNo, true, null, frameNo, 0 ) );
 
                 frameNo++;
             }
@@ -113,6 +151,11 @@ public class MP4Writer implements Listener
             {
                 e.printStackTrace();
             }
+        }
+
+        public ByteBuffer getFrame()
+        {
+            return _buffer;
         }
     }
 }

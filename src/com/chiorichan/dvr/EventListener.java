@@ -6,8 +6,6 @@
  */
 package com.chiorichan.dvr;
 
-import com.chiorichan.dvr.event.VideoFrameReadyEvent;
-import com.chiorichan.event.EventHandler;
 import com.chiorichan.event.Listener;
 import com.github.sarxos.webcam.WebcamMotionEvent;
 import com.github.sarxos.webcam.WebcamMotionListener;
@@ -20,12 +18,6 @@ class EventListener implements Listener, WebcamMotionListener
 {
     public EventListener()
     {
-    }
-
-    @EventHandler()
-    public void VideoFrameReadyEvent( VideoFrameReadyEvent event )
-    {
-
     }
 
     @Override

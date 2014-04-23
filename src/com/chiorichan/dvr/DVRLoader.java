@@ -19,12 +19,15 @@ import com.chiorichan.http.HttpResponseStage;
 import com.chiorichan.plugin.java.JavaPlugin;
 import com.github.sarxos.webcam.Webcam;
 import com.github.sarxos.webcam.ds.v4l4j.V4l4jDriver;
-import com.github.sarxos.webcam.log.WebcamLogConfigurator;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 public class DVRLoader extends JavaPlugin
 {
     private int captureId = -1;
     private EventListener listener = new EventListener();
+
+    private static Executor executor = null;
 
     static DVRLoader instance;
 
@@ -39,7 +42,7 @@ public class DVRLoader extends JavaPlugin
 
     public DVRLoader()
     {
-        WebcamLogConfigurator.configure( DVRLoader.class.getClassLoader().getResourceAsStream( "com/chiorichan/dvr/logback.xml" ) );
+        //WebcamLogConfigurator.configure( DVRLoader.class.getClassLoader().getResourceAsStream( "com/chiorichan/dvr/logback.xml" ) );
 
         Loader.getLogger().info( "You are running OS: " + System.getProperty( "os.name" ) );
 
@@ -145,9 +148,8 @@ public class DVRLoader extends JavaPlugin
     {
         getConfig().addDefault( "config.storage", getDataFolder() );
         saveConfig();
-        
-        //Loader.getPluginManager().registerEvents( listener, this );
 
+        //Loader.getPluginManager().registerEvents( listener, this );
         InputRegistry.findAllDevices();
 
         InputRegistry.openAllDevices();
@@ -161,9 +163,19 @@ public class DVRLoader extends JavaPlugin
         Loader.getScheduler().cancelTask( captureId );
         InputRegistry.destroyAllDevices();
     }
-    
+
     public static FileConfiguration getConfiguration()
     {
         return instance.getConfig();
+    }
+
+    public static Executor getExecutor()
+    {
+        if ( executor == null )
+        {
+            executor = Executors.newCachedThreadPool();
+        }
+
+        return executor;
     }
 }

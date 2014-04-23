@@ -15,8 +15,6 @@ import com.github.sarxos.webcam.Webcam;
 import com.github.sarxos.webcam.WebcamDiscoveryEvent;
 import com.github.sarxos.webcam.WebcamDiscoveryListener;
 import com.github.sarxos.webcam.WebcamException;
-import java.nio.ByteBuffer;
-import org.jcodec.containers.mp4.MP4Packet;
 
 public class InputRegistry implements WebcamDiscoveryListener
 {
