@@ -198,7 +198,7 @@ public class V4l4jDevice implements WebcamDevice, CaptureCallback, WebcamDevice.
 		
 		try
 		{
-			grabber = vd.getJPEGFrameGrabber( d.width, d.height, 0, V4L4JConstants.STANDARD_NTSC, 80 );
+			grabber = vd.getJPEGFrameGrabber( d.width, d.height, 0, V4L4JConstants.STANDARD_NTSC, 70 );
 		}
 		catch ( V4L4JException e )
 		{
@@ -306,7 +306,7 @@ public class V4l4jDevice implements WebcamDevice, CaptureCallback, WebcamDevice.
 			t1 = System.currentTimeMillis();
 			t2 = System.currentTimeMillis();
 		}
-		
+                
 		try
 		{
 			image = frame.getBufferedImage();

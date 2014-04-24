@@ -6,8 +6,10 @@
  */
 package com.chiorichan.dvr.registry;
 
+import com.chiorichan.Loader;
 import com.chiorichan.dvr.DVRLoader;
-import com.chiorichan.dvr.MP4Writer;
+import com.chiorichan.dvr.VP8Writer;
+import com.chiorichan.dvr.utils.VideoUtils;
 import com.github.sarxos.webcam.Webcam;
 import java.awt.Color;
 import java.awt.Font;
@@ -23,119 +25,130 @@ public class VideoInput
     protected long lastTimeStamp = -1;
     protected int currentFPS = 0;
     protected String title = "Camera 0";
-    protected MP4Writer writer;
-    
+    protected VP8Writer writer;
+
+    private boolean busy = false;
+
     public VideoInput( Webcam w )
     {
         device = w;
-        
-        writer = new MP4Writer( this );
     }
-    
+
     public String getChannelName()
     {
         return device.getName().replace( "/dev/", "" );
     }
-    
+
     public Webcam getDevice()
     {
         return device;
     }
-    
+
     public boolean open()
     {
-        return device.open();
+        writer = new VP8Writer( this );
+
+        return device.open( true );
     }
-    
+
     public boolean close()
     {
+        writer.detachedFromInput = true;
+        writer = null;
+
         return device.close();
     }
-    
+
     public void capture()
     {
-        DVRLoader.getExecutor().execute( new ThreadedExecution( this ) );
+        if ( busy )
+        {
+            //   Loader.getLogger().info( "Starting Executor - BUSY!" );
+        }
+        else
+            DVRLoader.getExecutor().execute( new ThreadedExecution( this ) );
     }
-    
+
     public void setTitle( String text )
     {
         title = text;
     }
-    
+
     public BufferedImage getLastImage()
     {
         return img;
     }
-    
+
     public int getHeight()
     {
-        return 1080;
+        return 480;
     }
-    
+
     public int getWidth()
     {
-        return 1920;
+        return 640;
     }
-    
+
     class ThreadedExecution implements Runnable
     {
-        boolean busy = false;
-        VideoInput vi;
-        
+        private VideoInput vi;
+
         public ThreadedExecution( VideoInput _vi )
         {
             vi = _vi;
         }
-        
+
         @Override
         public void run()
         {
             if ( busy )
-            {
                 return;
-            }
-            
+
             busy = true;
-            
-            img = device.getImage();
-            
-            if ( img != null )
+
+            if ( device.isImageNew() )
             {
-                currentFPS = Math.round( 1000 / ((float) (System.currentTimeMillis() - lastTimeStamp)) );
-                
-                lastTimeStamp = System.currentTimeMillis();
-                
-                Graphics2D gd = img.createGraphics();
-                // VideoUtils.adjustGraphics( gd );
-                Font font = new Font( "Sans", Font.BOLD, 26 );
-                String text = getChannelName() + " - " + currentFPS + " FPS";
-                TextLayout textLayout = new TextLayout( text, font, gd.getFontRenderContext() );
-                gd.setPaint( Color.WHITE );
-                gd.setFont( font );
-                FontMetrics fm = gd.getFontMetrics();
-                int x = (img.getWidth() / 2) - (fm.stringWidth( text ) / 2);
-                int y = img.getHeight() - 20;
-                textLayout.draw( gd, x, y );
-                gd.dispose();
-                /*
-                 * float ninth = 1.0f / 9.0f;
-                 * float[] kernel = new float[9];
-                 * for ( int z = 0; z < 9; z++ )
-                 * {
-                 * kernel[z] = ninth;
-                 * }
-                 * ConvolveOp op = new ConvolveOp( new Kernel( 3, 3, kernel ), ConvolveOp.EDGE_NO_OP, null );
-                 * BufferedImage image2 = op.filter( bi, null );
-                 * Graphics2D g2 = image2.createGraphics();
-                 * //VideoUtils.adjustGraphics( g2 );
-                 * g2.setPaint( Color.BLACK );
-                 * textLayout.draw( g2, x, y );
-                 */
-                
-                DVRLoader.getExecutor().execute( writer.frameHandler( img ) );
+                img = device.getImage();
+
+                if ( img != null )
+                {
+                    currentFPS = Math.round( 1000 / ((float) (System.currentTimeMillis() - lastTimeStamp)) );
+
+                    lastTimeStamp = System.currentTimeMillis();
+
+                    Graphics2D gd = img.createGraphics();
+                    VideoUtils.adjustGraphics( gd );
+                    Font font = new Font( "Sans", Font.BOLD, 26 );
+                    String text = getChannelName() + " - " + currentFPS + " FPS";
+                    TextLayout textLayout = new TextLayout( text, font, gd.getFontRenderContext() );
+                    gd.setPaint( Color.WHITE );
+                    gd.setFont( font );
+                    FontMetrics fm = gd.getFontMetrics();
+                    int x = (img.getWidth() / 2) - (fm.stringWidth( text ) / 2);
+                    int y = img.getHeight() - 20;
+                    textLayout.draw( gd, x, y );
+                    gd.dispose();
+                    /*
+                     * float ninth = 1.0f / 9.0f;
+                     * float[] kernel = new float[9];
+                     * for ( int z = 0; z < 9; z++ )
+                     * {
+                     * kernel[z] = ninth;
+                     * }
+                     * ConvolveOp op = new ConvolveOp( new Kernel( 3, 3, kernel ), ConvolveOp.EDGE_NO_OP, null );
+                     * BufferedImage image2 = op.filter( bi, null );
+                     * Graphics2D g2 = image2.createGraphics();
+                     * //VideoUtils.adjustGraphics( g2 );
+                     * g2.setPaint( Color.BLACK );
+                     * textLayout.draw( g2, x, y );
+                     */
+
+                    Loader.getLogger().info( "Frame Saved for Input: " + device.getName() + " - " + currentFPS );
+                    writer.addFrame( img );
+                }
+
+                busy = false;
             }
-            
-            busy = false;
         }
     }
 }

@@ -19,11 +19,13 @@ import com.chiorichan.http.HttpResponseStage;
 import com.chiorichan.plugin.java.JavaPlugin;
 import com.github.sarxos.webcam.Webcam;
 import com.github.sarxos.webcam.ds.v4l4j.V4l4jDriver;
+import com.github.sarxos.webcam.log.WebcamLogConfigurator;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
 public class DVRLoader extends JavaPlugin
 {
+    static boolean isRunning = false;
     private int captureId = -1;
     private EventListener listener = new EventListener();
 
@@ -42,11 +44,13 @@ public class DVRLoader extends JavaPlugin
 
     public DVRLoader()
     {
-        //WebcamLogConfigurator.configure( DVRLoader.class.getClassLoader().getResourceAsStream( "com/chiorichan/dvr/logback.xml" ) );
+        WebcamLogConfigurator.configure( DVRLoader.class.getClassLoader().getResourceAsStream( "com/chiorichan/dvr/logback.xml" ) );
 
         Loader.getLogger().info( "You are running OS: " + System.getProperty( "os.name" ) );
 
         instance = this;
+        
+        new InputRegistry();
     }
 
     public void startMultipart( final HttpResponse rep, int channel ) throws IOException
@@ -146,20 +150,24 @@ public class DVRLoader extends JavaPlugin
     @Override
     public void onEnable()
     {
+        isRunning = true;
+        
         getConfig().addDefault( "config.storage", getDataFolder() );
         saveConfig();
-
+        
         //Loader.getPluginManager().registerEvents( listener, this );
         InputRegistry.findAllDevices();
 
         InputRegistry.openAllDevices();
-
-        captureId = Loader.getScheduler().scheduleSyncRepeatingTask( this, new CapturingTask(), 2L, 2L );
+        
+        captureId = Loader.getScheduler().scheduleSyncRepeatingTask( this, new CapturingTask(), 10L, 10L );
     }
 
     @Override
     public void onDisable()
     {
+        isRunning = false;
+        
         Loader.getScheduler().cancelTask( captureId );
         InputRegistry.destroyAllDevices();
     }

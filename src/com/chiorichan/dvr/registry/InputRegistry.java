@@ -6,6 +6,7 @@
  */
 package com.chiorichan.dvr.registry;
 
+import com.chiorichan.Loader;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
@@ -20,32 +21,26 @@ public class InputRegistry implements WebcamDiscoveryListener
 {
     protected static List<VideoInput> inputs = new CopyOnWriteArrayList<VideoInput>();
     protected static InputRegistry instance;
-
-    static
-    {
-        findAllDevices();
-        instance = new InputRegistry();
-    }
-
+    
     public static void destroyAllDevices()
     {
         for ( VideoInput i : inputs )
         {
             i.close();
         }
-
+        
         inputs.clear();
     }
-
+    
     public static void findAllDevices()
     {
         destroyAllDevices();
-
+        
         try
         {
             for ( Webcam w : Webcam.getWebcams( 30, TimeUnit.SECONDS ) )
             {
-                inputs.add( new VideoInput( w ) );
+                RegisterNewInput( w );
             }
         }
         catch ( WebcamException | TimeoutException e )
@@ -53,18 +48,19 @@ public class InputRegistry implements WebcamDiscoveryListener
             e.printStackTrace();
         }
     }
-
-    private InputRegistry()
+    
+    public InputRegistry()
     {
+        instance = this;
         Webcam.addDiscoveryListener( this );
     }
-
+    
     @Override
     public void webcamFound( WebcamDiscoveryEvent arg0 )
     {
         RegisterNewInput( arg0.getWebcam() );
     }
-
+    
     @Override
     public void webcamGone( WebcamDiscoveryEvent arg0 )
     {
@@ -76,7 +72,7 @@ public class InputRegistry implements WebcamDiscoveryListener
             }
         }
     }
-
+    
     public static void openAllDevices()
     {
         for ( VideoInput i : inputs )
@@ -84,7 +80,7 @@ public class InputRegistry implements WebcamDiscoveryListener
             i.open();
         }
     }
-
+    
     public static void closeAllDevices()
     {
         for ( VideoInput i : inputs )
@@ -92,7 +88,7 @@ public class InputRegistry implements WebcamDiscoveryListener
             i.close();
         }
     }
-
+    
     public static VideoInput get( int index )
     {
         try
@@ -104,30 +100,36 @@ public class InputRegistry implements WebcamDiscoveryListener
             return null;
         }
     }
-
+    
     public static void RegisterNewInput( Webcam w )
     {
         for ( VideoInput i : inputs )
         {
-            if ( i.getDevice().equals( w ) )
+            if ( i.getDevice().getDevice().getName().equals( w.getDevice().getName() ) )
             {
                 return;
             }
         }
-
+        
+        Loader.getLogger().info( "Adding VideoInput: " + w.getName() );
+        
         inputs.add( new VideoInput( w ) );
     }
-
+    
     public static int getInputCount()
     {
         return inputs.size();
     }
-
+    
     public static void heartBeat()
     {
-        for ( VideoInput i : inputs )
-        {
-            i.capture();
-        }
+        inputs.get( 0 ).capture();
+
+        /*
+         * for ( VideoInput i : inputs )
+         * {
+         * i.capture();
+         * }
+         */
     }
 }

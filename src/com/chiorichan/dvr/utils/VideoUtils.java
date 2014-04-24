@@ -17,9 +17,4 @@ public class VideoUtils
         g.setRenderingHint( RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON );
         g.setRenderingHint( RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON );
     }
-
-    public static H264Encoder getMP4Encoder()
-    {
-        return new H264Encoder();
-    }
 }
