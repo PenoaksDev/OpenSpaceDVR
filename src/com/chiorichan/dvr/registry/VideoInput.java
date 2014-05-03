@@ -6,149 +6,178 @@
  */
 package com.chiorichan.dvr.registry;
 
+import com.chiorichan.ChatColor;
 import com.chiorichan.Loader;
 import com.chiorichan.dvr.DVRLoader;
-import com.chiorichan.dvr.VP8Writer;
+import com.chiorichan.dvr.VideoWriter;
 import com.chiorichan.dvr.utils.VideoUtils;
 import com.github.sarxos.webcam.Webcam;
+import com.google.common.collect.Lists;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.font.TextLayout;
 import java.awt.image.BufferedImage;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import org.joda.time.DateTime;
 
-public class VideoInput
+public class VideoInput implements Runnable
 {
-    protected Webcam device;
-    protected BufferedImage img = null;
-    protected long lastTimeStamp = -1;
-    protected int currentFPS = 0;
-    protected String title = "Camera 0";
-    protected VP8Writer writer;
+	protected Webcam device;
+	protected BufferedImage img = null;
+	protected long lastTimeStamp = -1;
+	protected int currentFPS = 0;
+	protected String title = "Camera 0";
+	protected VideoWriter writer;
+	protected final static CopyOnWriteArrayList<VideoWriter> writers = Lists.newCopyOnWriteArrayList();
+	public Thread currentThread;
 
-    private boolean busy = false;
+	private boolean busy = false;
 
-    public VideoInput( Webcam w )
-    {
-        device = w;
-    }
+	public VideoInput( Webcam w )
+	{
+		device = w;
 
-    public String getChannelName()
-    {
-        return device.getName().replace( "/dev/", "" );
-    }
+		// Temporary Testing Means
+		if ( w.getName().equals( "/dev/video0" ) )
+			DVRLoader.getExecutor().execute( this );
+	}
 
-    public Webcam getDevice()
-    {
-        return device;
-    }
+	public String getChannelName()
+	{
+		return device.getName().replace( "/dev/", "" );
+	}
 
-    public boolean open()
-    {
-        writer = new VP8Writer( this );
+	public Webcam getDevice()
+	{
+		return device;
+	}
 
-        return device.open( true );
-    }
+	public boolean open()
+	{
+		writer = new VideoWriter( this );
 
-    public boolean close()
-    {
-        writer.detachedFromInput = true;
-        writer = null;
+		writers.add( writer );
 
-        return device.close();
-    }
+		return device.open( false );
+	}
 
-    public void capture()
-    {
-        if ( busy )
-        {
-            //   Loader.getLogger().info( "Starting Executor - BUSY!" );
-        }
-        else
-            DVRLoader.getExecutor().execute( new ThreadedExecution( this ) );
-    }
+	public boolean close()
+	{
+		writer.detachedFromInput = true;
+		writers.remove( writer );
+		writer = null;
 
-    public void setTitle( String text )
-    {
-        title = text;
-    }
+		return device.close();
+	}
 
-    public BufferedImage getLastImage()
-    {
-        return img;
-    }
+	public static List<VideoWriter> getVideoWriters()
+	{
+		return writers;
+	}
 
-    public int getHeight()
-    {
-        return 480;
-    }
+	public VideoWriter getVideoWriter()
+	{
+		return writer;
+	}
 
-    public int getWidth()
-    {
-        return 640;
-    }
+	public void setTitle( String text )
+	{
+		title = text;
+	}
 
-    class ThreadedExecution implements Runnable
-    {
-        private VideoInput vi;
+	public BufferedImage getLastImage()
+	{
+		return img;
+	}
 
-        public ThreadedExecution( VideoInput _vi )
-        {
-            vi = _vi;
-        }
+	public int getHeight()
+	{
+		return 480;
+	}
 
-        @Override
-        public void run()
-        {
-            if ( busy )
-                return;
+	public int getWidth()
+	{
+		return 640;
+	}
 
-            busy = true;
+	@Override
+	public void run()
+	{
+		currentThread = Thread.currentThread();
 
-            if ( device.isImageNew() )
-            {
-                img = device.getImage();
+		Loader.getLogger().info( "Starting Video Input Thread - " + currentThread.getName() );
 
-                if ( img != null )
-                {
-                    currentFPS = Math.round( 1000 / ((float) (System.currentTimeMillis() - lastTimeStamp)) );
+		do
+		{
+			try
+			{
+				if ( device.isOpen() )
+				{
+					img = device.getImage();
 
-                    lastTimeStamp = System.currentTimeMillis();
+					if ( img != null )
+						if ( busy == false )
+						{
+							busy = true;
 
-                    Graphics2D gd = img.createGraphics();
-                    VideoUtils.adjustGraphics( gd );
-                    Font font = new Font( "Sans", Font.BOLD, 26 );
-                    String text = getChannelName() + " - " + currentFPS + " FPS";
-                    TextLayout textLayout = new TextLayout( text, font, gd.getFontRenderContext() );
-                    gd.setPaint( Color.WHITE );
-                    gd.setFont( font );
-                    FontMetrics fm = gd.getFontMetrics();
-                    int x = (img.getWidth() / 2) - (fm.stringWidth( text ) / 2);
-                    int y = img.getHeight() - 20;
-                    textLayout.draw( gd, x, y );
-                    gd.dispose();
-                    /*
-                     * float ninth = 1.0f / 9.0f;
-                     * float[] kernel = new float[9];
-                     * for ( int z = 0; z < 9; z++ )
-                     * {
-                     * kernel[z] = ninth;
-                     * }
-                     * ConvolveOp op = new ConvolveOp( new Kernel( 3, 3, kernel ), ConvolveOp.EDGE_NO_OP, null );
-                     * BufferedImage image2 = op.filter( bi, null );
-                     * Graphics2D g2 = image2.createGraphics();
-                     * //VideoUtils.adjustGraphics( g2 );
-                     * g2.setPaint( Color.BLACK );
-                     * textLayout.draw( g2, x, y );
-                     */
+							long start = System.currentTimeMillis();
+							currentFPS = Math.round( 1000 / ((float) (System.currentTimeMillis() - lastTimeStamp)) );
 
-                    Loader.getLogger().info( "Frame Saved for Input: " + device.getName() + " - " + currentFPS );
-                    writer.addFrame( img );
-                }
+							lastTimeStamp = System.currentTimeMillis();
 
-                busy = false;
-            }
-        }
-    }
+							// Determine the current time for the timestamp and frame position
+							DateTime dt = new DateTime();
+
+							Graphics2D gd = img.createGraphics();
+							VideoUtils.adjustGraphics( gd );
+							Font font = new Font( "Sans", Font.PLAIN, 18 );
+							String text = dt.toString( "YYYY/MM/dd hh:mm:ss.SSS aa" );
+							TextLayout textLayout = new TextLayout( text, font, gd.getFontRenderContext() );
+							gd.setPaint( Color.WHITE );
+							gd.setFont( font );
+							FontMetrics fm = gd.getFontMetrics();
+							//int x = (img.getWidth() / 2) - (fm.stringWidth( text ) / 2);
+							int x = img.getWidth() - fm.stringWidth( text ) - 20;
+							int y = img.getHeight() - 20;
+							textLayout.draw( gd, x, y );
+							gd.dispose();
+							/*
+							 * float ninth = 1.0f / 9.0f;
+							 * float[] kernel = new float[9];
+							 * for ( int z = 0; z < 9; z++ )
+							 * {
+							 * kernel[z] = ninth;
+							 * }
+							 * ConvolveOp op = new ConvolveOp( new Kernel( 3, 3, kernel ), ConvolveOp.EDGE_NO_OP, null );
+							 * BufferedImage image2 = op.filter( bi, null );
+							 * Graphics2D g2 = image2.createGraphics();
+							 * //VideoUtils.adjustGraphics( g2 );
+							 * g2.setPaint( Color.BLACK );
+							 * textLayout.draw( g2, x, y );
+							 */
+
+							Loader.getLogger().info( ChatColor.BLUE + "Frame Saved: Current FPS: " + currentFPS + ", Device: " + this.getChannelName() + ", Time Taken: " + (System.currentTimeMillis() - start) + ", Thread: " + currentThread.getName() );
+							writer.addFrame( dt, img );
+
+							busy = false;
+						}
+						else
+							Loader.getLogger().warning( "Received a new Frame from Video Input Device but the processing subroutine was busy, Thread: " + currentThread.getName() + ", Device: " + this.getChannelName() );
+				}
+
+				// This should get us about 25 FPS if possible.
+				Thread.sleep( 100L );
+			}
+			catch ( Exception ex )
+			{
+				Loader.getLogger().severe( "Exception Encountered in the Video Input Thread, Thread: " + currentThread.getName() + ", Device: " + this.getChannelName(), ex );
+			}
+		}
+		while ( DVRLoader.isRunning );
+
+		Loader.getLogger().info( "Stopping Video Input Thread - " + currentThread.getName() );
+	}
 }

@@ -1,285 +1,193 @@
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/.
- *
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not
+ * distributed with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ * 
  * Copyright 2014, OpenSpace Solutions LLC. All Right Reserved.
  */
 package com.chiorichan.dvr;
 
+import com.chiorichan.ChatColor;
 import com.chiorichan.Loader;
-import com.chiorichan.dvr.encoder.WebMuxer;
-import static com.chiorichan.dvr.encoder.WebMuxer.createAndAddElement;
 import com.chiorichan.dvr.registry.VideoInput;
+import com.chiorichan.dvr.storage.Interface;
 import com.google.common.collect.Maps;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import static java.lang.Thread.sleep;
-import java.nio.ByteBuffer;
 import java.util.Map.Entry;
 import java.util.TreeMap;
-import org.apache.poi.util.IOUtils;
-import org.jcodec.codecs.vpx.VP8Encoder;
-import org.jcodec.common.FileChannelWrapper;
-import org.jcodec.common.model.ColorSpace;
-import org.jcodec.common.model.Picture;
-import org.jcodec.common.model.Size;
-import org.jcodec.containers.mkv.Type;
-import org.jcodec.containers.mkv.elements.BlockElement;
-import org.jcodec.containers.mkv.elements.Cluster;
-import org.jcodec.scale.AWTUtil;
-import org.jcodec.scale.ColorUtil;
-import org.jcodec.scale.Transform;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
+import javax.imageio.ImageIO;
+import net.lingala.zip4j.model.ZipParameters;
+import net.lingala.zip4j.util.Zip4jConstants;
 import org.joda.time.DateTime;
-import org.joda.time.LocalTime;
 
 /**
  *
  * @author Chiori Greene
  */
-public class VP8Writer implements Runnable
+public class VideoWriter implements Runnable
 {
-    private VideoInput vi;
-    private File destFile;
-    private FileOutputStream fos;
-    private FileChannelWrapper ch;
-    private ByteBuffer _buffer;
-    private int frameNo;
-    private boolean frameEncoding = false;
-    private ByteBuffer _out;
-    private VP8Encoder encoder;
-    private Transform transform;
-    private Picture toEncode;
+	public boolean isRunning;
+	public Thread currentThread;
+	private Interface storageInterface = new Interface();
+	private long lastTen = 0L;
+	private ZipOutputStream containerStream = null;
+	private boolean frameEncoding = false;
+	private final TreeMap<DateTime, BufferedImage> timeCodedFrames = Maps.newTreeMap();
+	public boolean detachedFromInput = false;
+	private final VideoInput vi;
+	private File destFile;
+	private ZipParameters parameters;
 
-    private WebMuxer muxer;
-    private WebMuxer.WebMuxerTrack outTrack;
+	public VideoWriter( VideoInput _vi )
+	{
+		vi = _vi;
 
-    private TreeMap<LocalTime, BufferedImage> timeCodedFrames = Maps.newTreeMap();
-    private int currentTimecode = -1;
-    public boolean detachedFromInput = false;
+		DVRLoader.getExecutor().execute( this );
 
-    public VP8Writer( VideoInput _vi )
-    {
-        vi = _vi;
-        DVRLoader.getExecutor().execute( this );
-    }
+		parameters = new ZipParameters();
+		parameters.setCompressionMethod( Zip4jConstants.COMP_DEFLATE );
+		parameters.setCompressionLevel( Zip4jConstants.DEFLATE_LEVEL_NORMAL );
+		parameters.setEncryptFiles( true );
+		parameters.setEncryptionMethod( Zip4jConstants.ENC_METHOD_AES );
+		parameters.setAesKeyStrength( Zip4jConstants.AES_STRENGTH_256 );
+		parameters.setPassword( "OpenSpaceDVR2014" ); // Generate a private key for each DVR install. Installation ID maybe?
+	}
 
-    @Override
-    public void run()
-    {
-        Loader.getLogger().info( "Starting MP4 Writer Thread - " + Thread.currentThread().getName() );
+	@Override
+	public void run()
+	{
+		currentThread = Thread.currentThread();
 
-        do
-        {
-            try
-            {
-                if ( ch == null )
-                    setupWriter();
+		Loader.getLogger().info( "Starting Video Writer Thread - " + currentThread.getName() );
 
-                Entry<LocalTime, BufferedImage> firstFrame = getFrame();
+		isRunning = true;
 
-                if ( firstFrame != null )
-                {
-                    frameHandler( firstFrame.getKey(), firstFrame.getValue() );
-                    timeCodedFrames.remove( firstFrame.getKey() );
-                }
+		do
+		{
+			try
+			{
+				if ( containerStream == null )
+					changeDestFile();
 
-                sleep( 250 );
-            }
-            catch ( InterruptedException ex )
-            {
+				Entry<DateTime, BufferedImage> firstFrame = getFrame();
 
-            }
-        }
-        while ( DVRLoader.isRunning && !detachedFromInput );
+				if ( firstFrame != null )
+				{
+					frameHandler( firstFrame.getKey(), firstFrame.getValue() );
+					timeCodedFrames.remove( firstFrame.getKey() );
+				}
 
-        Loader.getLogger().info( "Stopping MP4 Writer Thread - " + Thread.currentThread().getName() );
+				Thread.sleep( 10L );
+			}
+			catch ( Exception ex )
+			{
+				Loader.getLogger().severe( "Exception Encountered in the Video Writer Thread (" + currentThread.getName() + ")", ex );
+			}
+		}
+		while ( DVRLoader.isRunning && !detachedFromInput );
 
-        finishUp();
-    }
+		Loader.getLogger().info( "Stopping Video Writer Thread - " + Thread.currentThread().getName() );
 
-    public synchronized void addFrame( BufferedImage bi )
-    {
-        LocalTime time = new LocalTime();
-        timeCodedFrames.put( time, bi );
-    }
+		try
+		{
+			finishUp();
+		}
+		catch ( IOException e )
+		{
+			e.printStackTrace();
+		}
 
-    private synchronized Entry<LocalTime, BufferedImage> getFrame()
-    {
-        if ( timeCodedFrames.isEmpty() )
-            return null;
+		isRunning = false;
+		currentThread = null;
 
-        return timeCodedFrames.firstEntry();
-    }
+		Loader.getLogger().info( "Video Writer Thread STOPPED! - " + Thread.currentThread().getName() );
+	}
 
-    public synchronized void setupWriter()
-    {
-        calculateDest();
+	public synchronized void addFrame( DateTime dt, BufferedImage bi )
+	{
+		timeCodedFrames.put( dt, bi );
+	}
 
-        destFile.mkdirs();
+	private synchronized Entry<DateTime, BufferedImage> getFrame()
+	{
+		if ( timeCodedFrames.isEmpty() )
+			return null;
 
-        if ( destFile.exists() )
-            destFile.delete();
+		return timeCodedFrames.firstEntry();
+	}
 
-        finishUp();
+	private void changeDestFile() throws IOException
+	{
+		File lastDestFile = destFile;
+		destFile = storageInterface.calculateContainingFile( new DateTime(), vi.getChannelName() );
 
-        try
-        {
-            fos = new FileOutputStream( destFile );
-            ch = new FileChannelWrapper( fos.getChannel() );
+		Loader.getLogger().info( "New destination selected for input " + vi.getChannelName() + ": " + destFile.getAbsolutePath() );
 
-            //_buffer = ByteBuffer.allocate( 1920 * 1080 * 6 );
-            encoder = new VP8Encoder();
+		// Close previous zip stream
+		if ( containerStream != null )
+			containerStream.finish();
 
-            muxer = new WebMuxer( ch );
+		// Open new zip stream
+		containerStream = new ZipOutputStream( new FileOutputStream( destFile ) );
+		containerStream.setComment( "OpenSpaceDVR video storage container!" );
 
-            outTrack = muxer.addVideoTrack( new Size( 640, 480 ), "V_VP8" );
+	}
 
-            transform = ColorUtil.getTransform( ColorSpace.RGB, encoder.getSupportedColorSpaces()[0] );
-        }
-        catch ( IOException e )
-        {
-            e.printStackTrace();
-            ch = null;
-        }
-        finally
-        {
-            toEncode = null;
-        }
-    }
+	private void frameHandler( DateTime dt, BufferedImage img )
+	{
+		try
+		{
+			if ( img == null )
+				return;
 
-    private String currentClusterId = "";
-    private Cluster currentCluster = null;
-    private Cluster lastCluster = null;
+			frameEncoding = true;
 
-    private synchronized void writeBlock( String clusterId, BlockElement be ) throws IOException
-    {
-        Loader.getLogger().info( "ClusterId: " + clusterId + ", lastClusterId: " + currentClusterId );
+			long start = System.currentTimeMillis();
 
-        if ( !clusterId.equals( currentClusterId ) )
-        {
-            if ( currentCluster != null )
-            {
-                // FINISH PREVIOUS CLUSTER
+			if ( lastTen != storageInterface.getTen( dt ) )
+			{
+				lastTen = storageInterface.getTen( dt );
+				changeDestFile();
+			}
 
-                ByteBuffer buff = currentCluster.mux();
+			containerStream.putNextEntry( new ZipEntry( dt.getMillis() + ".jpg" ) );
 
-                Loader.getLogger().debug( "Wrote Cluster (" + currentClusterId + "): " + buff.array().length );
+			ByteArrayOutputStream bs = new ByteArrayOutputStream();
+			ImageIO.write( img, "JPG", bs );
 
-                ch.write( buff );
-            }
+			containerStream.write( bs.toByteArray() );
 
-            // START NEW CLUSTER
-            lastCluster = currentCluster;
-            currentCluster = Type.createElementByType( Type.Cluster );
+			containerStream.closeEntry();
 
-            createAndAddElement( currentCluster, Type.Timecode, frameNo );
+			Loader.getLogger().info( ChatColor.YELLOW + "Writing Frame: Capture Time: " + dt.toString() + ", File Size: " + bs.size() + " bytes, Frames Buffered: " + timeCodedFrames.size() + ", Time Taken: " + (System.currentTimeMillis() - start) + ", Thread: " + Thread.currentThread().getName() );
 
-            currentCluster.timecode = frameNo;
+			frameEncoding = false;
+		}
+		catch ( IOException ex )
+		{
+			Loader.getLogger().severe( "Exception encountered within the frameHandler method:", ex );
+		}
+	}
 
-            if ( lastCluster != null )
-            {
-                long prevSize = lastCluster.getSize();
-                createAndAddElement( currentCluster, Type.PrevSize, prevSize );
-                currentCluster.prevsize = prevSize;
-            }
+	private synchronized void finishUp() throws IOException
+	{
+		while ( frameEncoding )
+		{
+			try
+			{
+				sleep( 10 );
+			}
+			catch ( InterruptedException ex )
+			{
+			}
+		}
 
-            currentClusterId = clusterId;
-        }
-
-        be.timecode = (int) (frameNo - currentCluster.timecode);
-        currentCluster.addChildElement( be );
-        frameNo++;
-    }
-
-    private void frameHandler( LocalTime lt, BufferedImage img )
-    {
-        Loader.getLogger().info( "Writing Frame: " + lt.toString() + " - " + Thread.currentThread().getName() );
-
-        frameEncoding = true;
-
-        if ( _out != null )
-            _out.clear();
-
-        Picture pic = AWTUtil.fromBufferedImage( img, ColorSpace.YUV420 );
-        /*
-         * if ( toEncode == null )
-         * toEncode = Picture.create( pic.getWidth(), pic.getHeight(), encoder.getSupportedColorSpaces()[0] );
-         *
-         * transform.transform( pic, toEncode );
-         */
-        _buffer = ByteBuffer.allocate( 1080 * 1920 * 6 );
-        _out = encoder.encodeFrame( pic, _buffer );
-
-        byte[] bytes = new byte[_out.limit()];
-
-        for ( int o = 0; o < _out.limit(); o++ )
-        {
-            bytes[o] = _out.get( o );
-        }
-
-        BlockElement se = BlockElement.keyFrame( 0, frameNo, bytes );
-
-        // Generate some sort of idenifier so we know when video advances to next frame.
-        String clusterId = lt.getHourOfDay() + "" + lt.getMinuteOfHour() + "" + lt.getSecondOfMinute();
-
-        try
-        {
-            writeBlock( clusterId, se );
-
-            Loader.getLogger().debug( "Current File Size: " + ch.size() + ", Frame Size: " + bytes.length + ", Frame No: " + frameNo );
-        }
-        catch ( IOException ex )
-        {
-            ex.printStackTrace();
-        }
-
-        frameEncoding = false;
-
-    }
-
-    private synchronized void finishUp()
-    {
-        while ( frameEncoding )
-        {
-            try
-            {
-                sleep( 10 );
-            }
-            catch ( InterruptedException ex )
-            {
-
-            }
-        }
-
-        if ( fos != null )
-            try
-            {
-                IOUtils.closeQuietly( fos );
-                if ( ch != null )
-                    ch.close();
-            }
-            catch ( IOException ex )
-            {
-                ex.printStackTrace();
-            }
-            finally
-            {
-                ch = null;
-                fos = null;
-            }
-    }
-
-    public File calculateDest()
-    {
-        DateTime dt = new DateTime();
-        String sep = System.getProperty( "file.separator" );
-        String suffix = sep + vi.getChannelName() + sep + dt.getYear() + sep + dt.getMonthOfYear() + sep + dt.getDayOfMonth() + sep + dt.getHourOfDay() + sep + ((Math.ceil( dt.getMinuteOfHour() / 5 )) * 5) + ".webm";
-        destFile = new File( DVRLoader.getConfiguration().getString( "config.storage", DVRLoader.instance.getDataFolder().getAbsolutePath() ) + suffix );
-
-        Loader.getLogger().info( "Calculated recording location: " + destFile.getAbsolutePath() );
-
-        return destFile;
-    }
+		containerStream.close();
+	}
 }

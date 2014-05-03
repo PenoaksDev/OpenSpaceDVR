@@ -59,6 +59,8 @@ public class WebMuxer
     private MasterElement mkvSeekHead;
     private MasterElement segmentElem;
     private LinkedList<Cluster> mkvClusters = new LinkedList<Cluster>();
+    private String writingApp = "JCodec";
+    private String muxingApp = "JCodec WebMuxer";
 
     public WebMuxer( SeekableByteChannel out )
     {
@@ -75,7 +77,7 @@ public class WebMuxer
         return video;
     }
 
-    WebMuxerTrack addVideoTrack( Size dimentions, String encoder, int timescale )
+    public WebMuxerTrack addVideoTrack( Size dimentions, String encoder, int timescale )
     {
         WebMuxerTrack video = new WebMuxerTrack( tracks.size(), timescale );
         video.dimentions = dimentions;
@@ -85,7 +87,7 @@ public class WebMuxer
         return video;
     }
 
-    WebMuxerTrack addAudioTrack( Size dimentions, String encoder, int timescale, int sampleDuration, int sampleSize )
+    public WebMuxerTrack addAudioTrack( Size dimentions, String encoder, int timescale, int sampleDuration, int sampleSize )
     {
         WebMuxerTrack audio = new WebMuxerTrack( tracks.size(), timescale );
         audio.encoder = encoder;
@@ -138,13 +140,13 @@ public class WebMuxer
         muxInfo();
         muxTracks();
         muxSeekHead();
-        muxCues();
+        //muxCues();
 
         // Tracks Info
         segmentElem.addChildElement( mkvSeekHead );
         segmentElem.addChildElement( mkvInfo );
         segmentElem.addChildElement( mkvTracks );
-        segmentElem.addChildElement( mkvCues );
+        //segmentElem.addChildElement( mkvCues );
     }
 
     private void muxCues()
@@ -219,7 +221,8 @@ public class WebMuxer
 
             createAndAddElement( trackEntryElem, TrackType, track.getMkvType() );
 
-            createAndAddElement( trackEntryElem, Name, track.getName() );
+            if ( track.getName() != null && !track.getName().isEmpty() )
+                createAndAddElement( trackEntryElem, Name, track.getName() );
 
 //                trackEntryElem.addChildElement(findFirst(track, TrackEntry, Language));
             createAndAddElement( trackEntryElem, CodecID, track.encoder );
@@ -252,6 +255,16 @@ public class WebMuxer
         }
     }
 
+    public void setWritingApp( String name )
+    {
+        writingApp = name;
+    }
+    
+    public void setMuxingApp( String name )
+    {
+        muxingApp = name;
+    }
+    
     private void muxInfo()
     {
         // # Segment Info
@@ -271,11 +284,11 @@ public class WebMuxer
         mkvInfo.addChildElement( dateElem );
 
         StringElement writingAppElem = (StringElement) Type.createElementByType( Type.WritingApp );
-        writingAppElem.set( "JCodec v0.1.0" );
+        writingAppElem.set( writingApp );
         mkvInfo.addChildElement( writingAppElem );
 
         StringElement muxingAppElem = (StringElement) Type.createElementByType( Type.MuxingApp );
-        muxingAppElem.set( "JCodec WebMuxer v0.1a" );
+        muxingAppElem.set( muxingApp );
         mkvInfo.addChildElement( muxingAppElem );
     }
 
@@ -361,9 +374,10 @@ public class WebMuxer
         public String encoder;
         public Size dimentions;
         public int trackId;
-        private int timescale = 40000000;
+        private int timescale = 1000000;
         public int currentBlock = 0;
         public List<BlockElement> blocks = new ArrayList<BlockElement>();
+        public String trackName = null;
         WebMuxer.TType ttype = TType.VIDEO;
 
         WebMuxerTrack( int trackId )
@@ -377,15 +391,14 @@ public class WebMuxer
             this.timescale = timescale;
         }
 
+        public void setName( String name )
+        {
+            trackName = name;
+        }
+
         public String getName()
         {
-            String name = "";
-            if ( isVideo() )
-                name = "Video";
-            if ( isAudio() )
-                name = "Audio";
-
-            return name + trackId;
+            return trackName;
         }
 
         public byte getMkvType()
@@ -465,46 +478,5 @@ public class WebMuxer
                 i++;
             }
         }
-
-//            private void tracksToClusters() {
-//                mkvClusters = new ArrayList<Cluster>();
-//
-//                long timecodeBase = 0;
-//                int frameRate = 25; // 1000000000/Segment.Info.TimecodeScale
-//                Cluster cluster = Type.createElementByType(Type.Cluster);
-//                List<Element> blocks = new ArrayList<Element>();
-//                
-//                for (WebMuxerTrack aTrack : tracks) {
-//                    aTrack.getTimescale();
-//
-//                    createAndAddElement(cluster, Timecode, timecodeBase);
-//                    createAndAddElement(cluster, PrevSize, mkvClusters.get(mkvClusters.size()-1).getSize());
-//
-//                    for (Element child : aCluster.children) {
-//                        if (child.type.equals(Type.SimpleBlock)) {
-//                            BlockElement aBlock = (BlockElement) child;
-//                            BlockElement be = copy(aBlock);
-//                            be.readFrames(source);
-//                            blocks.add(be);
-//                        } else if (child.type.equals(Type.BlockGroup)) {
-//                            MasterElement aBlockGroup = (MasterElement) child;
-//                            MasterElement bg = new MasterElement(Type.BlockGroup.id);
-//                            bg.type = Type.BlockGroup;
-//                            BlockElement aBlock = (BlockElement) Type.findFirst(aBlockGroup, Type.BlockGroup, Type.Block);
-//                            BlockElement be = BlockElement.copy(aBlock);
-//                            be.readFrames(source);
-//                            bg.addChildElement(be);
-//                            bg.addChildElement(Type.findFirst(aBlockGroup, Type.BlockGroup, Type.BlockDuration));
-//                            bg.addChildElement(Type.findFirst(aBlockGroup, Type.BlockGroup, Type.ReferenceBlock));
-//                            blocks.add(bg);
-//                        }
-//                    }
-//                }
-//                for (Element e : blocks)
-//                    cluster.addChildElement(e);
-//
-//                mkvClusters.add(cluster);
-//
-//            }
     }
 }
